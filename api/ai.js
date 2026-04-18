@@ -10,25 +10,23 @@ export default async function handler(req, res) {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         model: "llama-3.1-8b-instant",
         messages: [
           {
-            // ✅ เพิ่ม system prompt บังคับให้ตอบ JSON array เดียว
             role: "system",
-            content: `You are a JSON converter. You MUST output a single valid JSON array only.
-No markdown, no code blocks, no extra text, no multiple arrays.
-Only two types allowed: "text" and "code".
+            content: `You are a JSON converter. Output a single valid JSON array only.
+No markdown, no code blocks, no extra text.
+Only two types: "text" and "code".
+IMPORTANT: Write Thai characters directly as Thai text, never as unicode escape sequences.
 Output must start with [ and end with ]`
           },
           {
             role: "user",
-            content: `Convert this text into a single JSON array of objects with "type" and "value" fields:
-
-${text}`
+            content: `Convert this into a JSON array with "type" and "value" fields:\n\n${text}`
           }
         ],
         max_tokens: 2048
@@ -39,22 +37,27 @@ ${text}`
 
     if (!response.ok) {
       console.error("⚠️ Groq API Error:", data);
-      return res.status(response.status).json({ error: data.error?.message || 'Groq API Error' });
+      return res.status(response.status).json({ error: data.error?.message });
     }
 
     let rawContent = data.choices[0].message.content;
-    
-    // ✅ ทำความสะอาด
+
+    // ✅ Clean markdown fences
     rawContent = rawContent.replace(/```json|```/g, "").trim();
 
-    // ✅ ถ้า AI ยังดันส่งหลาย array มา ให้ merge เป็นอันเดียว
-    // หา pattern ][  หรือ ] \n [ แล้วเชื่อมกัน
-    const merged = rawContent
-      .replace(/\]\s*,?\s*\[/g, ",") // merge arrays
-      .trim();
+    // ✅ Merge multiple arrays ถ้า AI ดันส่งมาหลายอัน
+    const merged = rawContent.replace(/\]\s*,?\s*\[/g, ",").trim();
 
-    const parsed = JSON.parse(merged);
-    console.log("✅ Final parsed items:", parsed.length);
+    // ✅ Decode unicode escape sequences \uXXXX → ตัวอักษรจริง
+    const decoded = merged.replace(/\\u([\dA-Fa-f]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    );
+
+    const parsed = JSON.parse(decoded);
+    console.log("✅ Parsed items:", parsed.length);
+
+    // ✅ ส่งกลับพร้อม charset utf-8 ชัดเจน
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.status(200).json(parsed);
 
   } catch (error) {
