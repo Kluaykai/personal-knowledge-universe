@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { Trash2, Save, X, Plus, Image as ImageIcon, Code, Sparkles } from 'lucide-react'
+import { Trash2, Save, X, Plus, Image as ImageIcon, Code, Sparkles, Wand2 } from 'lucide-react'
 
 const EMPTY_FORM = { category: '', step: '', title: '', lat: '', lng: '' }
 
@@ -31,37 +31,47 @@ export default function AdminModal({ onClose, onSave, currentCategory, editNode 
   
   const fileInputRef = useRef(null)
 
-  const setField = (k, v) => setFormData(f => ({ ...f, [k]: v }))
-
   // 🧠 ฟังก์ชันส่งของให้ AI
-  const handleAIProcess = async () => {
-    if (!rawAI.trim()) return;
+  const handleAIProcess = async (textToProcess = null) => {
+    const targetText = textToProcess || rawAI;
+    if (!targetText.trim()) return;
+    
     setIsThinking(true);
     try {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: rawAI })
+        body: JSON.stringify({ text: targetText })
       });
       if (!res.ok) throw new Error('AI Error');
       const newBlocks = await res.json();
       
-      // เอา Block ที่ AI สร้างมาต่อท้ายของเดิม
+      // ถ้าเป็นโหมดแก้ และเลือกประมวลผลใหม่ ให้ถามหรือแทนที่
       setBlocks(prev => [...prev, ...newBlocks]);
-      setRawAI(''); // เคลียร์ช่องพิมพ์
-      showToast?.('AI จัดระเบียบเนื้อหาสำเร็จ! ✨', 'success');
+      setRawAI(''); 
+      showToast?.('AI จัดระเบียบเนื้อหาให้ใหม่แล้ว ✨', 'success');
     } catch (err) {
-      showToast?.('การประมวลผล AI ล้มเหลว โปรดเช็ค API Key', 'error');
+      showToast?.('AI ล้มเหลว เช็ค API Key ใน Vercel นะครับ', 'error');
     } finally {
       setIsThinking(false);
     }
   }
 
+  // 🔄 ดึงข้อความจาก Block ทั้งหมดกลับมาใส่ช่อง AI เพื่อประมวลผลใหม่
+  const loadExistingToAI = () => {
+    const textOnly = blocks
+      .filter(b => b.type === 'text' || b.type === 'code')
+      .map(b => b.value)
+      .join('\n\n');
+    setRawAI(textOnly);
+    showToast?.('ดึงข้อมูลเดิมมาที่ช่อง AI แล้ว', 'info');
+  }
+
+  const setField = (k, v) => setFormData(f => ({ ...f, [k]: v }))
+
   const handleImageUpload = useCallback(async (e) => {
-    // ... [โค้ดอัปโหลดรูปภาพเหมือนเดิม] ...
     const file = e.target.files?.[0]
     if (!file) return
-    if (fileInputRef.current) fileInputRef.current.value = ''
     setIsUploading(true)
     try {
       const ext = file.name.split('.').pop()
@@ -95,15 +105,29 @@ export default function AdminModal({ onClose, onSave, currentCategory, editNode 
     }
 
     try {
-      if (isEdit) { await supabase.from('knowledge_base').update(payload).eq('id', editNode.id) } 
-      else { await supabase.from('knowledge_base').insert([payload]) }
-      showToast?.('บันทึกสำเร็จ ✅', 'success')
+      if (isEdit) {
+        const { error } = await supabase.from('knowledge_base').update(payload).eq('id', editNode.id)
+        if (error) throw error
+        showToast?.('อัปเดตจักรวาลสำเร็จ 🚀', 'success')
+      } else {
+        const { error } = await supabase.from('knowledge_base').insert([payload])
+        if (error) throw error
+        showToast?.('บันทึกสำเร็จ ✅', 'success')
+      }
       onSave(); onClose();
     } catch (err) { showToast?.(err.message ?? 'เกิดข้อผิดพลาด', 'error') } 
     finally { setIsSaving(false) }
   }
 
-  const handleDelete = async () => { /* โค้ดเดิม */ setIsSaving(true); try { await supabase.from('knowledge_base').delete().eq('id', editNode.id); showToast?.('ลบสำเร็จ 🗑️', 'info'); onSave(); onClose(); } catch (err) { showToast?.(err.message ?? 'ลบไม่สำเร็จ', 'error') } finally { setIsSaving(false) } }
+  const handleDelete = async () => {
+    setIsSaving(true); 
+    try { 
+      await supabase.from('knowledge_base').delete().eq('id', editNode.id); 
+      showToast?.('ลบข้อมูลออกจากโลกแล้ว 🗑️', 'info'); 
+      onSave(); onClose(); 
+    } catch (err) { showToast?.('ลบไม่สำเร็จ', 'error') } 
+    finally { setIsSaving(false) }
+  }
 
   const updateBlock = (i, value) => setBlocks(prev => prev.map((b, idx) => idx === i ? { ...b, value } : b))
   const removeBlock = (i) => setBlocks(prev => prev.filter((_, idx) => idx !== i))
@@ -115,61 +139,82 @@ export default function AdminModal({ onClose, onSave, currentCategory, editNode 
       <div className="bg-[#050d1f] border border-[#00ffe7]/50 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto text-white shadow-[0_0_50px_rgba(0,255,231,0.2)]">
 
         <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
-          <h2 className="text-xl font-bold text-[#00ffe7] tracking-tighter font-mono">{isEdit ? '✏️ EDIT_THOUGHT' : '➕ NEW_THOUGHT'}</h2>
+          <h2 className="text-xl font-bold text-[#00ffe7] tracking-tighter font-mono">
+            {isEdit ? '✏️ EDIT_THOUGHT' : '➕ NEW_THOUGHT'}
+          </h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><X size={20}/></button>
         </div>
 
-        {/* ฟอร์มข้อมูลพื้นฐาน */}
+        {/* Form Inputs */}
         <div className="grid grid-cols-2 gap-3 mb-6 font-mono text-sm">
-          {[ { key: 'category', span: 1 }, { key: 'step', type: 'number', span: 1 }, { key: 'title', span: 2 }, { key: 'lat', type: 'number', span: 1 }, { key: 'lng', type: 'number', span: 1 } ].map(({ key, type = 'text', span }) => (
+          {[ { key: 'category' }, { key: 'step', type: 'number' }, { key: 'title', span: 2 }, { key: 'lat', type: 'number' }, { key: 'lng', type: 'number' } ].map(({ key, type = 'text', span }) => (
             <div key={key} className={span === 2 ? 'col-span-2' : ''}>
               <label className="text-[10px] text-[#00ffe7]/70 uppercase mb-1 block">{key}</label>
-              <input type={type} className={`w-full bg-black/40 border p-2 text-sm outline-none transition-colors ${errors[key] ? 'border-red-500' : 'border-white/20 focus:border-[#00ffe7]'}`} value={formData[key]} onChange={e => setField(key, e.target.value)} />
+              <input type={type} className="w-full bg-black/40 border border-white/20 p-2 text-sm outline-none focus:border-[#00ffe7]" value={formData[key]} onChange={e => setField(key, e.target.value)} />
             </div>
           ))}
         </div>
 
-        {/* 🌟 โซน AI ASSISTANT ใหม่ 🌟 */}
-        <div className="mb-4 p-4 bg-[#00ffe7]/5 border border-[#00ffe7]/20 rounded-lg shadow-[inset_0_0_20px_rgba(0,255,231,0.05)]">
-          <p className="text-[#00ffe7] text-xs font-mono mb-2 flex items-center gap-2"><Sparkles size={14}/> AI TEXT & CODE PARSER</p>
+        {/* 🌟 AI ASSISTANT ZONE 🌟 */}
+        <div className="mb-6 p-4 bg-[#00ffe7]/5 border border-[#00ffe7]/30 rounded-lg relative overflow-hidden">
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-[#00ffe7] text-xs font-mono flex items-center gap-2"><Sparkles size={14}/> AI SMART PARSER</p>
+            {isEdit && (
+              <button onClick={loadExistingToAI} className="text-[10px] text-[#ffe600] border border-[#ffe600]/30 px-2 py-1 rounded hover:bg-[#ffe600]/10 flex items-center gap-1 transition-all">
+                <Wand2 size={10}/> LOAD CURRENT TEXT
+              </button>
+            )}
+          </div>
           <textarea
-            className="w-full bg-black/60 border border-white/10 p-3 text-sm outline-none focus:border-[#00ffe7]/50 min-h-[80px] rounded resize-y placeholder-white/20"
-            placeholder="วางข้อความเละๆ หรือ โค้ดที่ปนกับเนื้อหาลงที่นี่... แล้วกดปุ่มให้ AI ชำแหละและแยกกล่องให้"
+            className="w-full bg-black/60 border border-white/10 p-3 text-sm outline-none focus:border-[#00ffe7]/50 min-h-[100px] rounded resize-y font-sans leading-relaxed"
+            placeholder="วางเนื้อหาดิบๆ ลงที่นี่... แล้วให้ AI ช่วยจัดระเบียบแยกหัวข้อและโค้ดให้สวยงาม"
             value={rawAI} onChange={e => setRawAI(e.target.value)}
           />
-          <button onClick={handleAIProcess} disabled={!rawAI.trim() || isThinking} className="mt-3 w-full py-2 bg-[#00ffe7]/10 text-[#00ffe7] text-xs font-mono font-bold border border-[#00ffe7]/40 hover:bg-[#00ffe7]/30 disabled:opacity-50 transition-colors flex justify-center items-center gap-2">
-            {isThinking ? <span className="animate-pulse">🧠 กำลังใช้สมองกลวิเคราะห์เนื้อหา...</span> : '🪄 จัดระเบียบข้อความนี้ลง BLOCK'}
+          <button onClick={() => handleAIProcess()} disabled={!rawAI.trim() || isThinking} className="mt-3 w-full py-2 bg-[#00ffe7] text-black text-xs font-bold border-none hover:brightness-110 disabled:opacity-30 transition-all flex justify-center items-center gap-2 rounded">
+            {isThinking ? <span className="animate-pulse">🧠 กำลังคิดวิเคราะห์...</span> : <><Sparkles size={14}/> {isEdit ? 'RE-PROCESS WITH AI' : 'PROCESS TO BLOCKS'}</>}
           </button>
         </div>
 
-        {/* CONTENT BLOCKS (เหมือนเดิม) */}
-        <div className="bg-black/20 p-4 border border-white/10 rounded mb-4">
-          <p className="text-white/40 text-[10px] font-mono mb-3">CURRENT_BLOCKS</p>
-          {blocks.length === 0 && <p className="text-white/30 text-xs text-center py-4">ยังไม่มี block — ใช้ AI ด้านบน หรือกดเพิ่มด้านล่าง</p>}
+        {/* Blocks Management */}
+        <div className="bg-black/20 p-4 border border-white/10 rounded mb-6">
+          <p className="text-white/40 text-[10px] font-mono mb-3 uppercase tracking-widest">Thought Structure</p>
+          {blocks.length === 0 && <p className="text-white/20 text-xs text-center py-6 border border-dashed border-white/10 rounded">ยังไม่มีข้อมูลเนื้อหา</p>}
           {blocks.map((b, i) => (
-            <div key={i} className="flex gap-2 mb-3 bg-white/5 p-2 rounded items-start relative group">
-              <div className="flex flex-col gap-1 pt-1">
-                <button onClick={() => moveBlock(i, -1)} className="text-white/30 hover:text-white text-xs">▲</button>
-                <button onClick={() => moveBlock(i, +1)} className="text-white/30 hover:text-white text-xs">▼</button>
+            <div key={i} className="flex gap-2 mb-3 bg-white/5 p-2 rounded group border border-white/5 hover:border-[#00ffe7]/20 transition-all">
+              <div className="flex flex-col gap-1">
+                <button onClick={() => moveBlock(i, -1)} className="text-white/20 hover:text-white text-[10px]">▲</button>
+                <button onClick={() => moveBlock(i, +1)} className="text-white/20 hover:text-white text-[10px]">▼</button>
               </div>
-              {b.type === 'text' && <textarea className="w-full bg-transparent text-sm min-h-[60px] border-none outline-none resize-y" value={b.value} onChange={e => updateBlock(i, e.target.value)} />}
-              {b.type === 'code' && <textarea className="w-full bg-black/60 text-[#00ff44] font-mono text-sm min-h-[80px] p-3 rounded border border-white/10 outline-none resize-y" value={b.value} onChange={e => updateBlock(i, e.target.value)} />}
-              {b.type === 'image' && <div className="w-full">{b.value ? <img src={b.value} alt="" className="h-24 rounded border border-[#00ffe7]/30 object-cover" /> : <p className="text-white/30 text-xs">ไม่มี URL</p>}</div>}
-              <button onClick={() => removeBlock(i)} className="text-red-400 hover:text-red-300 flex-shrink-0 mt-1"><Trash2 size={15}/></button>
+              {b.type === 'text' && <textarea className="w-full bg-transparent text-sm min-h-[50px] border-none outline-none resize-y" value={b.value} onChange={e => updateBlock(i, e.target.value)} />}
+              {b.type === 'code' && <textarea className="w-full bg-black/40 text-[#00ff44] font-mono text-sm min-h-[60px] p-2 border-none outline-none resize-y" value={b.value} onChange={e => updateBlock(i, e.target.value)} />}
+              {b.type === 'image' && <div className="w-full py-1">{b.value ? <img src={b.value} alt="" className="h-20 rounded object-cover" /> : 'No URL'}</div>}
+              <button onClick={() => removeBlock(i)} className="text-red-900 group-hover:text-red-500 transition-colors self-start mt-1"><Trash2 size={14}/></button>
             </div>
           ))}
-          <div className="flex gap-2 mt-3">
-            <button onClick={() => setBlocks(prev => [...prev, { type: 'text', value: '' }])} className="flex-1 py-2 border border-white/10 text-xs hover:bg-white/5 flex items-center justify-center gap-1 transition-colors"><Plus size={12}/> TEXT</button>
-            <button onClick={() => setBlocks(prev => [...prev, { type: 'code', value: '' }])} className="flex-1 py-2 border border-white/10 text-[#00ff44] hover:bg-white/5 flex items-center justify-center gap-1 transition-colors"><Code size={12}/> CODE</button>
-            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex-1 py-2 border border-white/10 text-xs hover:bg-white/5 flex items-center justify-center gap-1 transition-colors disabled:opacity-50"><ImageIcon size={12}/> IMAGE</button>
+          <div className="flex gap-2 mt-4">
+            <button onClick={() => setBlocks(prev => [...prev, { type: 'text', value: '' }])} className="flex-1 py-1.5 border border-white/10 text-[11px] hover:bg-white/5 flex items-center justify-center gap-1"><Plus size={12}/> TEXT</button>
+            <button onClick={() => setBlocks(prev => [...prev, { type: 'code', value: '' }])} className="flex-1 py-1.5 border border-white/10 text-[11px] text-[#00ff44] hover:bg-white/5 flex items-center justify-center gap-1"><Code size={12}/> CODE</button>
+            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex-1 py-1.5 border border-white/10 text-[11px] hover:bg-white/5 flex items-center justify-center gap-1">
+              <ImageIcon size={12}/> {isUploading ? 'WAIT...' : 'IMG'}
+            </button>
             <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleImageUpload} />
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-[#00ffe7] text-black font-bold uppercase tracking-widest hover:brightness-110 flex items-center justify-center gap-2 disabled:opacity-50 font-mono text-sm transition-all"><Save size={16}/> SAVE_TO_UNIVERSE</button>
-          {isEdit && !confirmDelete && <button onClick={() => setConfirmDelete(true)} className="px-4 py-3 border border-red-500/50 text-red-400 hover:bg-red-500/10"><Trash2 size={16}/></button>}
-          {isEdit && confirmDelete && <button onClick={handleDelete} disabled={isSaving} className="px-4 py-3 bg-red-500 text-white font-bold">ยืนยันลบ?</button>}
+        {/* Action Buttons */}
+        <div className="flex gap-3 pt-4 border-t border-white/10">
+          <button onClick={handleSave} disabled={isSaving} className="flex-[2] py-3 bg-[#00ffe7] text-black font-bold uppercase tracking-widest hover:brightness-110 disabled:opacity-50 text-sm flex items-center justify-center gap-2">
+            <Save size={18}/> {isSaving ? 'SAVING...' : isEdit ? 'UPDATE_UNIVERSE' : 'CREATE_NEW_THOUGHT'}
+          </button>
+          {isEdit && (
+            <div className="flex flex-1 gap-2">
+               {!confirmDelete ? (
+                 <button onClick={() => setConfirmDelete(true)} className="w-full border border-red-500/50 text-red-500 hover:bg-red-500/10 flex items-center justify-center"><Trash2 size={18}/></button>
+               ) : (
+                 <button onClick={handleDelete} disabled={isSaving} className="w-full bg-red-600 text-white text-[10px] font-bold uppercase hover:bg-red-700">CONFIRM DELETE?</button>
+               )}
+            </div>
+          )}
         </div>
       </div>
     </div>
