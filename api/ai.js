@@ -4,17 +4,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.GROQ_API_KEY;
   const { text } = req.body;
 
-  if (!apiKey) {
-    console.error("❌ ERROR: API KEY MISSING");
-    return res.status(500).json({ error: 'API Key missing' });
-  }
-
-  const prompt = `Convert the following text into a JSON array of objects.
-Each object must have "type" (either "text" or "code") and "value" (content).
-Example: [{"type": "text", "value": "Hello"}, {"type": "code", "value": "print('hi')"}]
-IMPORTANT: Output ONLY the raw JSON. No markdown, no explanations.
-Text:
-${text}`;
+  if (!apiKey) return res.status(500).json({ error: 'API Key missing' });
 
   try {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -25,8 +15,23 @@ ${text}`;
       },
       body: JSON.stringify({
         model: "llama-3.1-8b-instant",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 1024
+        messages: [
+          {
+            // ✅ เพิ่ม system prompt บังคับให้ตอบ JSON array เดียว
+            role: "system",
+            content: `You are a JSON converter. You MUST output a single valid JSON array only.
+No markdown, no code blocks, no extra text, no multiple arrays.
+Only two types allowed: "text" and "code".
+Output must start with [ and end with ]`
+          },
+          {
+            role: "user",
+            content: `Convert this text into a single JSON array of objects with "type" and "value" fields:
+
+${text}`
+          }
+        ],
+        max_tokens: 2048
       })
     });
 
@@ -38,10 +43,19 @@ ${text}`;
     }
 
     let rawContent = data.choices[0].message.content;
-    const cleanJson = rawContent.replace(/```json|```/g, "").trim();
+    
+    // ✅ ทำความสะอาด
+    rawContent = rawContent.replace(/```json|```/g, "").trim();
 
-    console.log("✅ Cleaned AI Response:", cleanJson);
-    res.status(200).json(JSON.parse(cleanJson));
+    // ✅ ถ้า AI ยังดันส่งหลาย array มา ให้ merge เป็นอันเดียว
+    // หา pattern ][  หรือ ] \n [ แล้วเชื่อมกัน
+    const merged = rawContent
+      .replace(/\]\s*,?\s*\[/g, ",") // merge arrays
+      .trim();
+
+    const parsed = JSON.parse(merged);
+    console.log("✅ Final parsed items:", parsed.length);
+    res.status(200).json(parsed);
 
   } catch (error) {
     console.error("🔥 Server Error:", error.message);
