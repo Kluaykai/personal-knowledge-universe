@@ -4,33 +4,45 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
   const { text } = req.body;
 
-  if (!apiKey) return res.status(500).json({ error: 'API Key missing in Vercel' });
+  if (!apiKey) {
+    console.error("❌ ERROR: GEMINI_API_KEY IS MISSING IN VERCEL SETTINGS!");
+    return res.status(500).json({ error: 'API Key missing' });
+  }
 
-  // 🌟 พรอมต์บังคับให้ AI เป็นบรรณาธิการ
-  const prompt = `You are an expert technical editor. Convert the following messy text into a structured JSON array.
-  The JSON must be an array of objects, where each object has "type" (either "text" or "code") and "value" (the content).
-  - Use "text" for explanations, paragraphs, and bullet points. Make it easy to read.
-  - Use "code" strictly for programming code snippets, payloads, or terminal commands.
-  OUTPUT ONLY VALID JSON. DO NOT INCLUDE MARKDOWN CODE BLOCKS like \`\`\`json.
-  
-  Text to process:\n\n${text}`;
+  // 🌟 ปรับ Prompt ให้สั้นและบังคับ JSON ให้ชัดเจนขึ้น
+  const prompt = `Task: Convert this text into a JSON array. 
+  Each object must have "type" (text or code) and "value" (content).
+  Text: ${text}`;
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // 🔗 เปลี่ยนไปใช้ v1 (Stable) และใช้ชื่อ model ที่แม่นยำกว่าเดิม
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" } // 🌟 ฟีเจอร์เด็ด บังคับออก JSON
+        generationConfig: { 
+          responseMimeType: "application/json",
+          temperature: 0.1 // ให้คำตอบนิ่งที่สุด
+        }
       })
     });
 
     const data = await response.json();
+
+    // เช็คกรณี API ตอบกลับเป็น Error (เช่น 400, 403)
+    if (!response.ok) {
+      console.error("⚠️ Google API Error:", data);
+      return res.status(response.status).json({ error: data.error?.message || 'Gemini API Error' });
+    }
+
     const jsonString = data.candidates[0].content.parts[0].text;
-    
-    // คืนค่ากลับไปให้ React
     res.status(200).json(JSON.parse(jsonString));
+
   } catch (error) {
+    console.error("🔥 Server Error:", error.message);
     res.status(500).json({ error: error.message });
   }
 }
