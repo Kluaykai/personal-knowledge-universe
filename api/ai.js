@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   const { text } = req.body;
 
   if (!apiKey) {
@@ -9,38 +9,40 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'API Key missing' });
   }
 
-  const prompt = `Task: Convert the following text into a JSON array of objects.
+  const prompt = `Convert the following text into a JSON array of objects.
 Each object must have "type" (either "text" or "code") and "value" (content).
 Example: [{"type": "text", "value": "Hello"}, {"type": "code", "value": "print('hi')"}]
-IMPORTANT: Output ONLY the raw JSON. No markdown tags, no explanations.
-Text to process:
+IMPORTANT: Output ONLY the raw JSON. No markdown, no explanations.
+Text:
 ${text}`;
 
   try {
-    // ✅ เปลี่ยนเป็น gemini-2.0-flash
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
+        model: "llama-3.1-8b-instant",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 1024
       })
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("⚠️ Google API Error:", data);
-      return res.status(response.status).json({ error: data.error?.message || 'Google API Error' });
+      console.error("⚠️ Groq API Error:", data);
+      return res.status(response.status).json({ error: data.error?.message || 'Groq API Error' });
     }
 
-    let rawContent = data.candidates[0].content.parts[0].text;
+    let rawContent = data.choices[0].message.content;
     const cleanJson = rawContent.replace(/```json|```/g, "").trim();
 
     console.log("✅ Cleaned AI Response:", cleanJson);
-
     res.status(200).json(JSON.parse(cleanJson));
+
   } catch (error) {
     console.error("🔥 Server Error:", error.message);
     res.status(500).json({ error: "การประมวลผล JSON ผิดพลาด: " + error.message });
