@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { Trash2, Save, X, Plus, Image as ImageIcon } from 'lucide-react'
+import { Trash2, Save, X, Plus, Image as ImageIcon, Code } from 'lucide-react'
 
 const EMPTY_FORM = { category: '', step: '', title: '', lat: '', lng: '' }
 
@@ -58,16 +58,10 @@ export default function AdminModal({ onClose, onSave, currentCategory, editNode 
     setErrors({})
     setIsSaving(true)
 
-    // 🌟 ระบบอัตโนมัติขั้วโลกเหนือ (North Pole Positioning)
     let finalLat = parseFloat(formData.lat);
     let finalLng = parseFloat(formData.lng);
-    
-    if (isNaN(finalLat) || formData.lat === '') {
-      finalLat = 82; // โยนไปขั้วโลกเหนือ
-    }
-    if (isNaN(finalLng) || formData.lng === '') {
-      finalLng = Math.floor(Math.random() * 61) - 30; // สุ่มระหว่าง -30 ถึง 30
-    }
+    if (isNaN(finalLat) || formData.lat === '') finalLat = 82; 
+    if (isNaN(finalLng) || formData.lng === '') finalLng = Math.floor(Math.random() * 61) - 30;
 
     const payload = {
       category: formData.category.trim().toLowerCase(), 
@@ -155,26 +149,35 @@ export default function AdminModal({ onClose, onSave, currentCategory, editNode 
 
         <div className="bg-black/20 p-4 border border-white/10 rounded mb-4">
           <p className="text-[#00ffe7] text-xs font-mono mb-3">CONTENT_BLOCKS</p>
-          {blocks.length === 0 && <p className="text-white/30 text-xs text-center py-4">ยังไม่มี block — กด + TEXT หรือ + IMAGE</p>}
+          {blocks.length === 0 && <p className="text-white/30 text-xs text-center py-4">ยังไม่มี block — กดเพิ่มด้านล่าง</p>}
           {blocks.map((b, i) => (
-            <div key={i} className="flex gap-2 mb-3 bg-white/5 p-2 rounded items-start">
+            <div key={i} className="flex gap-2 mb-3 bg-white/5 p-2 rounded items-start relative group">
               <div className="flex flex-col gap-1 pt-1">
                 <button onClick={() => moveBlock(i, -1)} className="text-white/30 hover:text-white text-xs">▲</button>
                 <button onClick={() => moveBlock(i, +1)} className="text-white/30 hover:text-white text-xs">▼</button>
               </div>
-              {b.type === 'text'
-                ? <textarea className="w-full bg-transparent text-sm min-h-[60px] border-none outline-none resize-y" value={b.value} onChange={e => updateBlock(i, e.target.value)} placeholder="พิมพ์เนื้อหา..." />
-                : (
-                  <div className="w-full">
-                    {b.value ? <img src={b.value} alt="" className="h-24 rounded border border-[#00ffe7]/30 object-cover" /> : <p className="text-white/30 text-xs">ไม่มี URL</p>}
-                  </div>
-                )
-              }
+              
+              {/* 🌟 แสดงผลต่างกันตามประเภทของ Block */}
+              {b.type === 'text' && (
+                <textarea className="w-full bg-transparent text-sm min-h-[60px] border-none outline-none resize-y" value={b.value} onChange={e => updateBlock(i, e.target.value)} placeholder="พิมพ์เนื้อหา..." />
+              )}
+              {b.type === 'code' && (
+                <textarea className="w-full bg-black/60 text-[#00ff44] font-mono text-sm min-h-[80px] p-3 rounded border border-white/10 outline-none resize-y" value={b.value} onChange={e => updateBlock(i, e.target.value)} placeholder="// พิมพ์ Code หรือ Command ที่นี่..." />
+              )}
+              {b.type === 'image' && (
+                <div className="w-full">
+                  {b.value ? <img src={b.value} alt="" className="h-24 rounded border border-[#00ffe7]/30 object-cover" /> : <p className="text-white/30 text-xs">ไม่มี URL</p>}
+                </div>
+              )}
+
               <button onClick={() => removeBlock(i)} className="text-red-400 hover:text-red-300 flex-shrink-0 mt-1"><Trash2 size={15}/></button>
             </div>
           ))}
+          
+          {/* 🌟 ปุ่มเพิ่ม Block 3 แบบ */}
           <div className="flex gap-2 mt-3">
             <button onClick={() => setBlocks(prev => [...prev, { type: 'text', value: '' }])} className="flex-1 py-2 border border-white/10 text-xs hover:bg-white/5 flex items-center justify-center gap-1 transition-colors"><Plus size={12}/> TEXT</button>
+            <button onClick={() => setBlocks(prev => [...prev, { type: 'code', value: '' }])} className="flex-1 py-2 border border-white/10 text-[#00ff44] hover:bg-white/5 flex items-center justify-center gap-1 transition-colors"><Code size={12}/> CODE</button>
             <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex-1 py-2 border border-white/10 text-xs hover:bg-white/5 flex items-center justify-center gap-1 transition-colors disabled:opacity-50">
               <ImageIcon size={12}/> {isUploading ? 'กำลังอัปโหลด...' : 'IMAGE'}
             </button>
