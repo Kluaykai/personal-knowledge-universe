@@ -5,41 +5,49 @@ export default async function handler(req, res) {
   const { text } = req.body;
 
   if (!apiKey) {
-    console.error("❌ ERROR: GEMINI_API_KEY IS MISSING IN VERCEL SETTINGS!");
+    console.error("❌ ERROR: API KEY MISSING");
     return res.status(500).json({ error: 'API Key missing' });
   }
 
-  // 🌟 ปรับ Prompt ให้สั้นและบังคับ JSON ให้ชัดเจนขึ้น
-  const prompt = `Task: Convert this text into a JSON array. 
-  Each object must have "type" (text or code) and "value" (content).
-  Text: ${text}`;
-
   try {
-    // 🔗 เปลี่ยนไปใช้ v1 (Stable) และใช้ชื่อ model ที่แม่นยำกว่าเดิม
+    // 🔗 ใช้ v1 ซึ่งเสถียรที่สุดในตอนนี้
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ 
+          parts: [{ text: `Task: Extract text and code from the following content into a structured list. Content: ${text}` }] 
+        }],
         generationConfig: { 
           responseMimeType: "application/json",
-          temperature: 0.1 // ให้คำตอบนิ่งที่สุด
+          // 🌟 เพิ่ม Schema เพื่อบังคับรูปแบบคำตอบ ป้องกัน Error 400
+          responseSchema: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["text", "code"] },
+                value: { type: "string" }
+              },
+              required: ["type", "value"]
+            }
+          }
         }
       })
     });
 
     const data = await response.json();
 
-    // เช็คกรณี API ตอบกลับเป็น Error (เช่น 400, 403)
     if (!response.ok) {
-      console.error("⚠️ Google API Error:", data);
-      return res.status(response.status).json({ error: data.error?.message || 'Gemini API Error' });
+      console.error("⚠️ Google API Detail:", JSON.stringify(data));
+      return res.status(response.status).json({ error: data.error?.message || 'Gemini Error' });
     }
 
-    const jsonString = data.candidates[0].content.parts[0].text;
-    res.status(200).json(JSON.parse(jsonString));
+    // ดึงผลลัพธ์ (Gemini จะคืนค่าเป็น String ที่เป็น JSON อยู่ข้างใน)
+    const jsonResult = data.candidates[0].content.parts[0].text;
+    res.status(200).json(JSON.parse(jsonResult));
 
   } catch (error) {
     console.error("🔥 Server Error:", error.message);
