@@ -1,0 +1,65 @@
+{
+  "nodes": [
+    {
+      "step": 1,
+      "title": "1. พื้นฐาน Linux",
+      "year": "Foundation",
+      "lat": 37.7749,
+      "lng": -122.4194,
+      "deep_dive": "## 🐧 พื้นฐาน Linux — รากฐานของทุกสิ่ง\n\nก่อนที่คุณจะแกะ Firmware ของเราเตอร์ได้ คุณต้องเข้าใจ Linux ให้ลึกพอ เพราะเราเตอร์ส่วนใหญ่ในโลกนี้ **วิ่งบน Linux** ทั้งสิ้น\n\n### 📁 โครงสร้างไฟล์ (Filesystem Hierarchy)\nLinux ไม่มี C:\\ หรือ D:\\ แบบ Windows แต่มี **root `/`** เป็นจุดเริ่มต้นของทุกอย่าง:\n- `/bin` — คำสั่งพื้นฐาน เช่น `ls`, `cp`, `mv` ที่ระบบต้องใช้ตอน boot\n- `/sbin` — คำสั่งสำหรับ admin เช่น `ifconfig`, `iptables`\n- `/etc` — ไฟล์ config ทั้งหมด ใครคุมไฟล์ใน `/etc` คือคุม soul ของระบบ\n- `/proc` — ไม่ใช่ไฟล์จริง แต่เป็น **virtual filesystem** ที่ kernel ใช้แชร์ข้อมูล เช่น `/proc/cpuinfo`, `/proc/net/route`\n- `/dev` — device files เช่น `/dev/mtd0` (flash chip), `/dev/ttyS0` (UART port)\n- `/tmp` — RAM disk ใน embedded ระบบ เขียนได้ชั่วคราว\n\n### ⚙️ Process & Daemon\n- ทุกโปรแกรมที่รันคือ **process** มี PID (Process ID)\n- **Daemon** คือ process ที่วิ่งหลังบ้านตลอดเวลา เช่น `dnsmasq` (DNS+DHCP), `httpd` (web UI), `udhcpd`\n- คำสั่งสำคัญ: `ps aux`, `kill`, `top`, `pgrep`\n\n### 🐚 Shell Script\nภาษาสคริปต์ที่เราเตอร์ใช้ควบคุมการ boot และ config:\n```bash\n#!/bin/sh\nif [ -f /etc/config/network ]; then\n    . /etc/config/network\nfi\n```\n- `sh` ไม่ใช่ `bash` — embedded Linux มักใช้ **BusyBox sh** ซึ่งเบากว่า\n- ต้องเข้าใจ `if/else`, loop, pipe `|`, redirect `>`, `&&`, `||`\n\n### 🔑 สิ่งที่ต้องรู้ก่อนก้าวต่อ\n- การจัดการ permission: `chmod`, `chown`\n- Network commands: `ip`, `ifconfig`, `netstat`, `route`\n- File tools: `find`, `grep`, `cat`, `strings`, `hexdump`",
+      "key_figures": ["/etc", "/proc", "/dev/mtd0", "BusyBox sh", "daemon", "iptables", "dnsmasq", "PID", "rootfs", "hexdump"]
+    },
+    {
+      "step": 2,
+      "title": "2. โครงสร้าง Firmware",
+      "year": "Architecture",
+      "lat": 47.6062,
+      "lng": -122.3321,
+      "deep_dive": "## 📦 โครงสร้าง Firmware — กายวิภาคของ .bin\n\nไฟล์ `.bin` ที่คุณ download จากเว็บ TP-Link หรือ ASUS นั้น **ไม่ใช่ไฟล์ธรรมดา** มันคือโลกทั้งใบที่บีบอัดซ้อนกันอยู่หลายชั้น\n\n### 🏗️ Layout ของ Firmware โดยทั่วไป\n```\n+------------------+\n|   Header / Magic  |  ← ระบุ model, version, checksum\n+------------------+\n|   Bootloader      |  ← U-Boot หรือ CFE\n+------------------+\n|   Kernel (zImage) |  ← Linux kernel แบบบีบอัด\n+------------------+\n|   Root Filesystem |  ← SquashFS หรือ JFFS2\n+------------------+\n```\n\n### 🔱 Bootloader\n- **U-Boot** (Universal Bootloader) — พบใน 90% ของเราเตอร์ ARM/MIPS\n- **CFE** (Common Firmware Environment) — ใช้ใน Broadcom chipset\n- หน้าที่: initialize hardware → load kernel → ส่ง control ให้ Linux\n- มี **environment variables** เช่น `bootargs`, `bootcmd` ที่ควบคุม boot process\n\n### 🗜️ Root Filesystem Formats\n- **SquashFS** — read-only, บีบอัดสูง ใช้ใน production firmware\n  - แตก: `unsquashfs firmware.squashfs`\n- **JFFS2** (Journalling Flash File System 2) — read-write, ใช้เก็บ config ที่เปลี่ยนได้\n  - เหมาะกับ NAND/NOR flash ที่มี erase cycles จำกัด\n- **UBIFS** — รุ่นใหม่กว่า JFFS2 ใช้ใน flash ขนาดใหญ่\n\n### 🧲 Magic Bytes & Header\nทุก firmware มี **magic number** ที่บ่งบอกว่าเป็นไฟล์ประเภทใด:\n- `27 05 19 56` → U-Boot image\n- `68 73 71 73` → SquashFS\n- `1F 8B` → gzip\n- `FD 37 7A 58` → XZ compressed\n\n### 🗺️ Flash Memory Layout\nใน flash chip ของเราเตอร์จะแบ่ง partition คล้ายฮาร์ดดิสก์:\n```\n/dev/mtd0 → bootloader\n/dev/mtd1 → kernel\n/dev/mtd2 → rootfs\n/dev/mtd3 → config (JFFS2)\n```\nดู layout ได้จาก: `cat /proc/mtd`",
+      "key_figures": ["U-Boot", "CFE", "SquashFS", "JFFS2", "UBIFS", "MTD", "magic bytes", "zImage", "binwalk", "unsquashfs"]
+    },
+    {
+      "step": 3,
+      "title": "3. การทำงานของเราเตอร์",
+      "year": "Networking",
+      "lat": 40.7128,
+      "lng": -74.006,
+      "deep_dive": "## 🌐 การทำงานของเราเตอร์ — มากกว่ากล่องกระพริบไฟ\n\nเราเตอร์ที่บ้านคุณนั้นเป็น **Linux server จิ๋ว** ที่ทำงานหนักกว่าที่คุณคิด มันรัน daemon หลายตัวพร้อมกัน จัดการ traffic ทุก packet ที่ผ่าน\n\n### 🔄 NAT (Network Address Translation)\nนี่คือหัวใจของเราเตอร์บ้าน:\n- IP ภายใน (192.168.x.x) แปลงเป็น IP สาธารณะ 1 IP ที่ได้จาก ISP\n- ใช้ **iptables / nftables** ใน kernel เป็น engine\n```bash\niptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE\n```\n- **Conntrack** ติดตาม connection state ทุก TCP/UDP session\n\n### 📡 DHCP\n- เราเตอร์รัน **DHCP server** (มักเป็น `dnsmasq` หรือ `udhcpd`)\n- แจก IP, subnet mask, gateway, DNS ให้อุปกรณ์ใน LAN อัตโนมัติ\n- leases เก็บใน `/tmp/dhcp.leases` — อ่านได้ด้วย `cat`\n\n### 🔍 DNS\n- `dnsmasq` ทำหน้าที่เป็นทั้ง **DHCP + DNS forwarder**\n- cache DNS query ลดความล่าช้า\n- สามารถ intercept DNS ได้ผ่าน `/etc/hosts` หรือ config\n- **DNS hijacking** ทำที่นี่ — เช่น redirect domain ไปยัง IP ปลอม\n\n### 🌍 WAN vs LAN\n| Interface | ชื่อทั่วไป | หน้าที่ |\n|-----------|-----------|--------|\n| `eth0` / `wan0` | WAN | รับ IP จาก ISP (PPPoE, DHCP) |\n| `br-lan` / `eth1` | LAN | switch ภายใน บ้าน |\n| `wlan0` | WiFi | AP สำหรับ wireless client |\n\n### 🔥 Firewall & Routing Table\n- **iptables chains**: INPUT, OUTPUT, FORWARD\n- FORWARD chain คือจุดที่ควบคุม traffic ผ่านเราเตอร์\n- `ip route show` — ดู routing table\n- `ip neigh` — ดู ARP cache (MAC address ของอุปกรณ์ใน LAN)\n\n### 🛠️ Port Forwarding & DMZ\n- Port forwarding = DNAT rule ใน iptables\n- ช่วยให้ traffic จาก WAN เข้าถึง server ใน LAN ได้",
+      "key_figures": ["NAT", "iptables", "dnsmasq", "DHCP", "Conntrack", "br-lan", "PPPoE", "DNAT", "MASQUERADE", "WAN/LAN bridge"]
+    },
+    {
+      "step": 4,
+      "title": "4. Embedded Linux / Tools",
+      "year": "Tooling",
+      "lat": 30.2672,
+      "lng": -97.7431,
+      "deep_dive": "## 🔧 Embedded Linux & Tools — ชุดอาวุธของนักวิเคราะห์ Firmware\n\nถ้า Linux ปกติคือ MacBook Pro, **Embedded Linux คือ Raspberry Pi ที่มีขนาดเท่าเล็บมือ** ทรัพยากรน้อย แต่ต้องทำงานหนัก ดังนั้นทุกอย่างถูก optimize จนแทบไม่เหลือ fat เลย\n\n### 🧰 BusyBox — Swiss Army Knife\nBusyBox รวมคำสั่ง Unix กว่า **300+ คำสั่ง** ไว้ในไฟล์ขนาดเล็กเพียงไฟล์เดียว:\n```bash\n$ ls -la /bin/ls\nlrwxrwxrwx 1 root root 7 /bin/ls -> busybox\n$ ls -la /bin/cat\nlrwxrwxrwx 1 root root 7 /bin/cat -> busybox\n```\n- ทุกคำสั่งเป็นแค่ **symlink** ไปที่ไฟล์เดียวกัน!\n- เมื่อ BusyBox ถูกเรียก มันดู `argv[0]` เพื่อรู้ว่าต้องทำอะไร\n\n### 🔍 binwalk — เครื่องสแกน Firmware\nเครื่องมือที่นักวิเคราะห์ทุกคนต้องใช้:\n```bash\n$ binwalk firmware.bin\nDECIMAL    HEX        DESCRIPTION\n0          0x0        TRX firmware header\n28         0x1C       LZMA compressed data\n1245184    0x130000   Squashfs filesystem\n```\n- scan หา magic bytes ของ filesystem, compression, header\n- `-e` flag สำหรับ extract อัตโนมัติ\n- `-A` scan สำหรับ CPU architecture (MIPS, ARM, x86)\n\n### 🌱 OpenWrt — Firmware โอเพนซอร์สสำหรับเราเตอร์\n- แทนที่ stock firmware ด้วย Linux ที่ customize ได้เต็มที่\n- package manager: **opkg** (คล้าย apt)\n- config system: **UCI** (Unified Configuration Interface)\n```bash\nuci set network.lan.ipaddr='192.168.2.1'\nuci commit network\n/etc/init.d/network restart\n```\n- ศึกษา OpenWrt = ศึกษา architecture จริงของ router firmware\n\n### 📡 สถาปัตยกรรม CPU ที่พบบ่อย\n| Chipset | Architecture | พบใน |\n|---------|-------------|------|\n| Qualcomm IPQ | ARM | TP-Link, Linksys |\n| MediaTek MT76xx | MIPS / ARM | ASUS, Xiaomi |\n| Broadcom BCM | MIPS | Netgear, Cisco |\n\n### 🛠️ Cross-compilation Toolchain\n- เราเตอร์ใช้ CPU ต่างจาก PC → ต้อง compile code บน x86 แต่ให้ run บน MIPS/ARM\n- **buildroot** / **OpenWrt SDK** ช่วยสร้าง toolchain",
+      "key_figures": ["BusyBox", "binwalk", "OpenWrt", "opkg", "UCI", "MIPS", "ARM", "cross-compile", "buildroot", "squashfs-tools"]
+    },
+    {
+      "step": 5,
+      "title": "5. Flash / Boot Process",
+      "year": "Hardware",
+      "lat": 36.1699,
+      "lng": -115.1398,
+      "deep_dive": "## ⚡ Flash & Boot Process — จากไฟดับถึง Shell Prompt\n\nเมื่อคุณเสียบปลั๊กเราเตอร์ มีเหตุการณ์เกิดขึ้น **ภายใน 2-3 วินาที** ที่ซับซ้อนกว่าที่คิด และนี่คือจุดที่นักวิจัย firmware ใช้เข้าถึงระบบ\n\n### 🔢 Boot Sequence ทีละขั้น\n```\n[1] Power ON → CPU reset vector\n[2] BootROM (in-chip, read-only) initialize DRAM\n[3] Bootloader stage 1 (SPL) load จาก flash\n[4] U-Boot เต็มรูปแบบ initialize peripheral\n[5] U-Boot load kernel จาก flash → RAM\n[6] Kernel decompress ตัวเอง, mount rootfs\n[7] /sbin/init หรือ procd เริ่ม daemon\n[8] 🎉 Router พร้อมใช้งาน\n```\n\n### 💾 NOR vs NAND Flash\n| ประเภท | ขนาด | ความเร็ว | ใช้เก็บ |\n|--------|------|---------|--------|\n| NOR Flash | 1-16 MB | อ่านเร็ว, เขียนช้า | Bootloader, kernel |\n| NAND Flash | 32 MB+ | เขียนเร็ว | Rootfs, config |\n| eMMC | 512 MB+ | เร็วทุกด้าน | High-end router |\n\n### 📟 UART / Serial Console — ประตูลับของ Hacker\nUART คือ **debug port** ที่ผู้ผลิตเปิดไว้ระหว่างพัฒนา และมักลืมปิด:\n1. เปิดเคส หา **4 pin** บน PCB (TX, RX, GND, VCC 3.3V)\n2. ต่อกับ **USB-to-UART adapter** (CH340, CP2102)\n3. เปิด `minicom` หรือ `screen /dev/ttyUSB0 115200`\n4. เห็น boot log แบบ real-time!\n\n```\nU-Boot 2019.07 (Sep 15 2021)\nCPU: ARMv7\nDRAM: 256 MiB\nFlash: 32 MiB\n...\nHit any key to stop autoboot: 3\n```\n\n**กด key ทันที = เข้า U-Boot shell** 🎯\n\n### 🆘 Recovery Mode\n- กดปุ่ม Reset ค้างตอน boot → เข้า **failsafe / recovery mode**\n- บางรุ่นรัน TFTP server รอรับ firmware ใหม่\n- OpenWrt failsafe: mount rootfs แบบ read-write ได้\n\n### 🔌 JTAG — Debug Port ระดับ Hardware\n- ควบคุม CPU โดยตรงผ่าน hardware\n- อ่าน/เขียน flash ได้แม้ bootloader พัง\n- เครื่องมือ: OpenOCD, J-Link",
+      "key_figures": ["U-Boot", "UART", "JTAG", "NOR Flash", "NAND Flash", "MTD", "procd", "TFTP recovery", "minicom", "SPL"]
+    },
+    {
+      "step": 6,
+      "title": "6. Firmware Security",
+      "year": "Security",
+      "lat": 38.9072,
+      "lng": -77.0369,
+      "deep_dive": "## 🔐 Firmware Security — ปราการสุดท้ายและจุดอ่อนที่ซ่อนอยู่\n\nหลังจากเข้าใจว่า firmware ทำงานอย่างไร ขั้นต่อไปคือมองด้วยสายตาของ **นักวิจัยความปลอดภัย** — ทุกอย่างที่เราเรียนมาคือเครื่องมือในการวิเคราะห์\n\n### 🔏 Checksum & Integrity Verification\nผู้ผลิตป้องกัน firmware ปลอมด้วย:\n- **MD5/SHA256 hash** ใน header → bootloader ตรวจก่อน flash\n- **CRC32** สำหรับ partition แต่ละส่วน\n- บางรุ่นข้าม verify → เป็นช่องโหว่ที่ใช้ flash custom firmware ได้\n\n### ✍️ Digital Signature\nระบบที่แน่นกว่า:\n- RSA/ECDSA signature ใน firmware image\n- Bootloader มี **public key** ฝังอยู่ verify ก่อน load kernel\n- **Secure Boot** ใน ARM TrustZone — ถอดไม่ได้ถ้าไม่มี private key\n- แต่ถ้า implementation ผิด (เช่น ไม่ตรวจ length) → **buffer overflow!**\n\n### 🔍 Static Analysis — แกะ Firmware ออกมาดู\nขั้นตอนการวิเคราะห์ firmware:\n```bash\n# 1. Extract\nbinwalk -e firmware.bin\n\n# 2. หา hardcoded credentials\ngrep -r 'password\\|passwd\\|admin' squashfs-root/etc/\n\n# 3. หา binary ที่น่าสงสัย\nfind . -type f -executable | xargs file | grep ELF\n\n# 4. วิเคราะห์ด้วย strings\nstrings httpd | grep -i 'secret\\|key\\|token'\n```\n\n### 🧠 Reverse Engineering พื้นฐาน\n- **Ghidra** (NSA open-source) — decompile binary กลับเป็น C\n- **Radare2 / Cutter** — disassembler สำหรับ MIPS/ARM\n- หา **hardcoded credentials**, backdoor, hidden API endpoint\n- ช่องโหว่คลาสสิก: `strcpy()` overflow, command injection ใน web UI\n\n### 🚨 Common Vulnerability Classes ใน Router Firmware\n| ประเภท | ตัวอย่าง |\n|--------|----------|\n| Command Injection | `ping $(whoami)` ใน web UI |\n| Buffer Overflow | `strcpy` ใน httpd |\n| Hardcoded Creds | `admin:admin` ใน `/etc/shadow` |\n| Insecure Update | ไม่ verify signature |\n| Info Disclosure | เปิด debug endpoint `/cgi-bin/status` |\n\n### 🛡️ การป้องกันและ Responsible Disclosure\n- วิเคราะห์บน **lab environment** เท่านั้น\n- ถ้าพบช่องโหว่จริง → **Responsible Disclosure** แจ้งผู้ผลิตก่อน 90 วัน\n- Platform: CVE, Full Disclosure, Vendor Bug Bounty",
+      "key_figures": ["Ghidra", "binwalk", "CVE", "Secure Boot", "RSA signature", "command injection", "buffer overflow", "Radare2", "hardcoded credentials", "CRC32"]
+    }
+  ],
+  "links": [
+    { "source": 1, "target": 2 },
+    { "source": 2, "target": 3 },
+    { "source": 3, "target": 4 },
+    { "source": 4, "target": 5 },
+    { "source": 5, "target": 6 }
+  ]
+}
