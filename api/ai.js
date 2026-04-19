@@ -14,7 +14,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
+        model: "llama-3.3-70b-versatile", // ✅ เปลี่ยน model ใหญ่ขึ้น ทำตาม instruction ได้ดีกว่า
         messages: [
           {
             role: "system",
@@ -25,7 +25,7 @@ export default async function handler(req, res) {
             content: `Convert this into a JSON array with "type" and "value" fields:\n\n${text}`
           }
         ],
-        max_tokens: 2048
+        max_tokens: 4096
       })
     });
 
@@ -38,19 +38,24 @@ export default async function handler(req, res) {
 
     let rawContent = data.choices[0].message.content;
 
-    // 1. clean markdown
+    // clean markdown
     rawContent = rawContent.replace(/```json|```/g, "").trim();
 
-    // 2. merge multiple arrays
+    // merge multiple arrays
     rawContent = rawContent.replace(/\]\s*,?\s*\[/g, ",").trim();
 
-    // 3. parse ก่อน — ตอนนี้ \u0e01 ยังอยู่ใน string แต่ JSON.parse จะ decode ให้เองอยู่แล้ว!
-    const parsed = JSON.parse(rawContent);
+    // ✅ ถ้า parse ไม่ได้ ให้ fallback เป็น plain text แทน ไม่ crash
+    let parsed;
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch (e) {
+      console.warn("⚠️ JSON parse failed, using fallback");
+      // ✅ Fallback: ส่งกลับเป็น text ธรรมดา 1 block
+      parsed = [{ type: "text", value: text }];
+    }
 
-    // 4. ส่งกลับโดยใช้ res.end() แทน res.json() เพื่อควบคุม encoding เอง
-    const output = JSON.stringify(parsed, null, 0);
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.status(200).end(output);
+    res.status(200).end(JSON.stringify(parsed));
 
   } catch (error) {
     console.error("🔥 Server Error:", error.message);
