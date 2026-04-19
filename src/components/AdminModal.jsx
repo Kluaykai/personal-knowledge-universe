@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { Trash2, Save, X, Plus, Image as ImageIcon, Code, Sparkles, Wand2 } from 'lucide-react'
 
@@ -19,7 +19,15 @@ export default function AdminModal({ onClose, onSave, currentCategory, editNode 
       ? { category: editNode.category, step: String(editNode.step ?? ''), title: editNode.title, lat: String(editNode.lat ?? ''), lng: String(editNode.lng ?? '') }
       : { ...EMPTY_FORM, category: currentCategory || '' }
   )
-  const [blocks, setBlocks]         = useState(isEdit ? (editNode.content ?? []) : [])
+
+  // 🌟 ดึงข้อมูลเก่ามาใส่ Block (รองรับทั้ง String เก่าและ Array ใหม่)
+  const [blocks, setBlocks] = useState(() => {
+    if (!isEdit || !editNode.content) return [];
+    if (typeof editNode.content === 'string') return [{ type: 'text', value: editNode.content }];
+    if (Array.isArray(editNode.content)) return editNode.content;
+    return [];
+  });
+
   const [errors, setErrors]         = useState({})
   const [isSaving, setIsSaving]     = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -46,18 +54,17 @@ export default function AdminModal({ onClose, onSave, currentCategory, editNode 
       if (!res.ok) throw new Error('AI Error');
       const newBlocks = await res.json();
       
-      // ถ้าเป็นโหมดแก้ และเลือกประมวลผลใหม่ ให้ถามหรือแทนที่
       setBlocks(prev => [...prev, ...newBlocks]);
       setRawAI(''); 
-      showToast?.('AI จัดระเบียบเนื้อหาให้ใหม่แล้ว ✨', 'success');
+      showToast?.('AI จัดระเบียบเนื้อหาให้แล้ว ✨', 'success');
     } catch (err) {
-      showToast?.('AI ล้มเหลว เช็ค API Key ใน Vercel นะครับ', 'error');
+      showToast?.('AI ล้มเหลว โปรดตรวจสอบหน้า Log ของ Vercel', 'error');
     } finally {
       setIsThinking(false);
     }
   }
 
-  // 🔄 ดึงข้อความจาก Block ทั้งหมดกลับมาใส่ช่อง AI เพื่อประมวลผลใหม่
+  // 🔄 ฟังก์ชันดึงข้อความจาก Block ทั้งหมดกลับมาใส่ช่อง AI
   const loadExistingToAI = () => {
     const textOnly = blocks
       .filter(b => b.type === 'text' || b.type === 'code')
